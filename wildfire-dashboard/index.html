@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🔥 Wildfire &amp; Smoke Dashboard</title>
+    <link rel="stylesheet" href="/node_modules/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="/node_modules/leaflet.markercluster/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="/node_modules/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="h-full bg-gray-950 text-gray-100 flex flex-col">
+
+    <!-- ── Header ── -->
+    <header class="flex items-center justify-between px-5 py-3 bg-gray-900 border-b border-gray-700 shrink-0 z-10">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">🔥</span>
+        <div>
+          <h1 class="text-lg font-bold leading-tight tracking-wide">Wildfire &amp; Smoke Dashboard</h1>
+          <p class="text-xs text-gray-400">Powered by NASA FIRMS · Leaflet · OpenStreetMap</p>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="flex items-center gap-4 flex-wrap">
+
+        <!-- Time Range Filter -->
+        <div class="flex flex-col items-start gap-1">
+          <label class="text-xs text-gray-400 font-medium uppercase tracking-wider">Time Range</label>
+          <select id="timeRange"
+            class="bg-gray-800 border border-gray-600 text-gray-100 text-sm rounded px-2 py-1 focus:outline-none focus:border-orange-500">
+            <option value="1">Last 24 hours</option>
+            <option value="2">Last 48 hours</option>
+            <option value="3">Last 3 days</option>
+            <option value="5" selected>Last 5 days</option>
+          </select>
+        </div>
+
+        <!-- Satellite Layer Mode -->
+        <div class="flex flex-col items-start gap-1">
+          <label class="text-xs text-gray-400 font-medium uppercase tracking-wider">Satellite Layer</label>
+          <select id="layerMode"
+            class="bg-gray-800 border border-gray-600 text-gray-100 text-sm rounded px-2 py-1 focus:outline-none focus:border-orange-500">
+            <option value="off" selected>Off</option>
+            <option value="truecolor">True Color (Visual)</option>
+            <option value="aod">Aerosol / AOD (Polusi Asap)</option>
+          </select>
+        </div>
+
+        <!-- Date Slider (shown when a satellite layer is active) -->
+        <div id="dateSliderContainer" class="hidden flex-col items-start gap-1">
+          <label class="text-xs text-gray-400 font-medium uppercase tracking-wider">
+            Date: <span id="dateLabel" class="text-orange-400 font-semibold"></span>
+          </label>
+          <input type="range" id="dateSlider" min="0" max="6" value="1"
+            class="w-48 accent-orange-500 cursor-pointer" />
+        </div>
+
+        <!-- Hotspot Count Badge -->
+        <div class="flex flex-col items-center bg-gray-800 border border-gray-600 rounded px-3 py-1">
+          <span class="text-xs text-gray-400 uppercase tracking-wider">Hotspots</span>
+          <span id="hotspotCount" class="text-lg font-bold text-orange-400">—</span>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- ── Loading Overlay ── -->
+    <div id="loadingOverlay"
+      class="absolute inset-0 z-50 flex items-center justify-center bg-gray-950/80 backdrop-blur-sm transition-opacity duration-500">
+      <div class="text-center">
+        <div class="inline-block w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p class="text-orange-400 font-semibold tracking-wide">Fetching satellite data…</p>
+        <p id="loadingMsg" class="text-gray-400 text-sm mt-1">Connecting to NASA FIRMS</p>
+      </div>
+    </div>
+
+    <!-- ── Map Container ── -->
+    <div id="map" class="flex-1 w-full z-0"></div>
+
+    <!-- ── Legend ── -->
+    <div id="legend" class="absolute bottom-10 left-4 z-20 bg-gray-900/90 border border-gray-700 rounded-lg px-4 py-3 text-xs shadow-xl space-y-3">
+
+      <!-- Hotspot Confidence (always visible) -->
+      <div>
+        <p class="font-semibold text-gray-300 mb-1.5 uppercase tracking-wider">Hotspot Confidence</p>
+        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-600 inline-block"></span> High (≥ 80%)</div>
+        <div class="flex items-center gap-2 mt-1"><span class="w-3 h-3 rounded-full bg-orange-400 inline-block"></span> Nominal (50–79%)</div>
+        <div class="flex items-center gap-2 mt-1"><span class="w-3 h-3 rounded-full bg-yellow-300 inline-block"></span> Low (&lt; 50%)</div>
+      </div>
+
+      <!-- AOD legend (shown only when AOD mode is active) -->
+      <div id="legendAod" class="hidden border-t border-gray-700 pt-2">
+        <p class="font-semibold text-gray-300 mb-1.5 uppercase tracking-wider">Aerosol / AOD</p>
+        <div class="w-full h-3 rounded mb-1" style="background: linear-gradient(to right, #ffffb2, #fecc5c, #fd8d3c, #f03b20, #bd0026);"></div>
+        <div class="flex justify-between text-gray-400">
+          <span>Low</span>
+          <span>Medium</span>
+          <span>High</span>
+        </div>
+        <p class="text-gray-500 mt-1">Particle density (AOD 550 nm)</p>
+      </div>
+
+    </div>
+
+    <!-- ── Error Toast ── -->
+    <div id="errorToast"
+      class="hidden fixed top-20 right-4 z-50 max-w-sm bg-red-900 border border-red-500 text-red-100 rounded-lg px-4 py-3 shadow-xl text-sm">
+      <strong>Error:</strong> <span id="errorMsg"></span>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

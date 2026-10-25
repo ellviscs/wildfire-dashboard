@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+#map {
+  min-height: 0;
+}
+
+/* ── Leaflet Popup Overrides ───────────────────────────────────────────────── */
+.leaflet-popup-content-wrapper {
+  background: #1f2937;
+  color: #f3f4f6;
+  border: 1px solid #374151;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  padding: 0;
+  overflow: hidden;
+}
+
+.leaflet-popup-tip {
+  background: #1f2937;
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  width: auto !important;
+}
+
+.popup-card {
+  padding: 14px 16px;
+  min-width: 220px;
+}
+
+.popup-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fb923c;
+  margin-bottom: 2px;
+}
+
+.popup-subtitle {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-bottom: 10px;
+}
+
+.popup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.popup-table td {
+  padding: 3px 6px;
+  vertical-align: top;
+}
+
+.popup-table td:first-child {
+  color: #9ca3af;
+  white-space: nowrap;
+  padding-right: 12px;
+}
+
+.popup-table tr:nth-child(even) td {
+  background: #111827;
+}
+
+.popup-loading {
+  padding: 14px 18px;
+  color: #fb923c;
+  font-size: 0.88rem;
+  font-style: italic;
+}
+
+/* ── Cluster Icons ─────────────────────────────────────────────────────────── */
+.cluster-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  font-weight: 700;
+  color: #fff;
+  font-size: 0.8rem;
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.cluster-small  { background: rgba(251, 146,  60, 0.85); }
+.cluster-medium { background: rgba(220,  38,  38, 0.85); }
+.cluster-large  { background: rgba(153,  27,  27, 0.92); }
+
+/* ── Loading overlay ───────────────────────────────────────────────────────── */
+#loadingOverlay {
+  transition: opacity 0.5s ease;
+}

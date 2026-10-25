@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FireWatch — Dashboard Kebakaran Hutan & Titik Asap</title>
+
+  <!-- Tailwind CSS Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet MarkerCluster JS -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+  <style>
+    /* ── Custom scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    /* ── Map container ── */
+    #map { width: 100%; height: 100%; min-height: 0; }
+
+    /* ── Leaflet popup custom ── */
+    .fw-popup .leaflet-popup-content-wrapper {
+      background: #0f172a;
+      border: 1px solid #1e3a5f;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-width: 220px;
+    }
+    .fw-popup .leaflet-popup-tip { background: #0f172a; }
+    .fw-popup .leaflet-popup-close-button { color: #94a3b8 !important; }
+
+    /* ── Cluster icon override ── */
+    .marker-cluster-small, .marker-cluster-medium { background-color: rgba(239, 68, 68, 0.35) !important; }
+    .marker-cluster-large { background-color: rgba(239, 68, 68, 0.55) !important; }
+    .marker-cluster-small div, .marker-cluster-medium div, .marker-cluster-large div {
+      background-color: rgba(220, 38, 38, 0.75) !important;
+      color: #fff !important;
+      font-weight: 700;
+    }
+
+    /* ── Pulse animation for live badge ── */
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.8); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    .pulse-dot::before {
+      content: '';
+      display: block;
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: pulse-ring 1.4s ease-out infinite;
+    }
+
+    /* ── Range slider ── */
+    input[type=range] { accent-color: #ef4444; }
+
+    /* ── Vue transition ── */
+    .fade-enter-active, .fade-leave-active { transition: opacity 0.25s ease; }
+    .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+    /* ── Stat card shimmer (loading) ── */
+    @keyframes shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .shimmer {
+      background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+      background-size: 800px 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 4px;
+      display: inline-block;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-200 min-h-screen overflow-hidden" style="font-family:'Segoe UI',system-ui,sans-serif;">
+
+<div id="app" class="flex flex-col h-screen">
+
+  <!-- ╔══════════════════════════════╗ -->
+  <!-- ║         TOP NAVBAR          ║ -->
+  <!-- ╚══════════════════════════════╝ -->
+  <header class="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800 shrink-0 z-10">
+    <div class="flex items-center gap-3">
+      <!-- Fire SVG icon -->
+      <svg class="w-7 h-7 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 2C9 7 6 8.5 6 12a6 6 0 0012 0c0-3.5-3-5-6-10zm0 16a4 4 0 01-4-4c0-2 1.5-3.5 4-7 2.5 3.5 4 5 4 7a4 4 0 01-4 4z"/>
+      </svg>
+      <span class="text-lg font-bold tracking-tight text-white">Fire<span class="text-orange-500">Watch</span></span>
+      <span class="hidden sm:inline text-xs text-slate-500 ml-1">Dashboard Kebakaran Hutan & Titik Asap Global</span>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Live Badge -->
+      <span class="relative flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+        <span class="relative w-2.5 h-2.5">
+          <span class="pulse-dot absolute inset-0 rounded-full bg-emerald-400 z-10"></span>
+        </span>
+        LIVE
+      </span>
+      <!-- Last Updated -->
+      <span class="hidden md:block text-xs text-slate-500">Update: {{ lastUpdated }}</span>
+      <!-- Refresh Button -->
+      <button @click="fetchFirmsData" :disabled="loading"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 transition disabled:opacity-50">
+        <svg :class="['w-3.5 h-3.5', loading ? 'animate-spin' : '']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a9 9 0 0115-3.6M20 15a9 9 0 01-15 3.6"/>
+        </svg>
+        {{ loading ? 'Memuat...' : 'Refresh' }}
+      </button>
+    </div>
+  </header>
+
+  <!-- ╔══════════════════════════════════════════════════════════╗ -->
+  <!-- ║   MAIN CONTENT — Sidebar + Map                          ║ -->
+  <!-- ╚══════════════════════════════════════════════════════════╝ -->
+  <main class="flex flex-1 overflow-hidden">
+
+    <!-- ─── LEFT SIDEBAR ─── -->
+    <aside class="w-72 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto">
+
+      <!-- ── STAT CARDS ── -->
+      <div class="p-4 border-b border-slate-800">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Ringkasan Data</p>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-xs text-slate-400 mb-1">Total Hotspot</p>
+            <p v-if="loading" class="shimmer w-16 h-5"></p>
+            <p v-else class="text-xl font-bold text-orange-400">{{ stats.total.toLocaleString('id') }}</p>
+          </div>
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-xs text-slate-400 mb-1">Conf. Tinggi</p>
+            <p v-if="loading" class="shimmer w-16 h-5"></p>
+            <p v-else class="text-xl font-bold text-red-400">{{ stats.highConf.toLocaleString('id') }}</p>
+          </div>
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-xs text-slate-400 mb-1">Conf. Sedang</p>
+            <p v-if="loading" class="shimmer w-16 h-5"></p>
+            <p v-else class="text-xl font-bold text-yellow-400">{{ stats.medConf.toLocaleString('id') }}</p>
+          </div>
+          <div class="bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <p class="text-xs text-slate-400 mb-1">Conf. Rendah</p>
+            <p v-if="loading" class="shimmer w-16 h-5"></p>
+            <p v-else class="text-xl font-bold text-slate-300">{{ stats.lowConf.toLocaleString('id') }}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── FILTER: RENTANG WAKTU ── -->
+      <div class="p-4 border-b border-slate-800">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Filter Rentang Waktu</p>
+        <div class="space-y-2">
+          <label v-for="opt in timeOptions" :key="opt.value"
+            class="flex items-center gap-2.5 cursor-pointer group">
+            <input type="radio" :value="opt.value" v-model="selectedDays"
+              @change="fetchFirmsData"
+              class="accent-orange-500 w-4 h-4 cursor-pointer" />
+            <span :class="['text-sm transition', selectedDays === opt.value ? 'text-orange-400 font-semibold' : 'text-slate-400 group-hover:text-slate-200']">
+              {{ opt.label }}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- ── FILTER: CONFIDENCE ── -->
+      <div class="p-4 border-b border-slate-800">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Filter Confidence</p>
+        <div class="space-y-2">
+          <label v-for="opt in confOptions" :key="opt.value"
+            class="flex items-center gap-2.5 cursor-pointer group">
+            <input type="checkbox" :value="opt.value" v-model="selectedConf"
+              @change="renderMarkers"
+              class="w-4 h-4 rounded cursor-pointer" :style="`accent-color:${opt.color}`" />
+            <span class="flex items-center gap-1.5 text-sm text-slate-400 group-hover:text-slate-200 transition">
+              <span class="w-2 h-2 rounded-full" :style="`background:${opt.color}`"></span>
+              {{ opt.label }}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- ── LAYER CONTROLS ── -->
+      <div class="p-4 border-b border-slate-800">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Layer Peta</p>
+
+        <!-- Smoke Layer Toggle -->
+        <label class="flex items-center justify-between cursor-pointer mb-3">
+          <span class="text-sm text-slate-300">🌫 Citra Asap Nyata</span>
+          <div @click="toggleSmokeLayer"
+            :class="['relative inline-flex h-5 w-9 items-center rounded-full transition-colors', smokeLayerOn ? 'bg-sky-500' : 'bg-slate-700']">
+            <span :class="['inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform', smokeLayerOn ? 'translate-x-4' : 'translate-x-1']"></span>
+          </div>
+        </label>
+
+        <!-- Base Map selector -->
+        <p class="text-xs text-slate-500 mb-2">Base Map</p>
+        <div class="flex gap-2">
+          <button v-for="bm in baseMaps" :key="bm.id"
+            @click="switchBaseMap(bm.id)"
+            :class="['flex-1 text-xs py-1.5 rounded border transition', activeBaseMap === bm.id
+              ? 'border-orange-500 text-orange-400 bg-orange-500/10'
+              : 'border-slate-700 text-slate-400 bg-slate-800 hover:border-slate-500']">
+            {{ bm.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- ── GIBS DATE SLIDER ── -->
+      <div class="p-4 border-b border-slate-800">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs font-semibold uppercase tracking-widest text-slate-500">Tanggal Citra Satelit</p>
+          <span class="text-xs font-mono text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded">{{ gibsDate }}</span>
+        </div>
+        <input type="range" :min="0" :max="gibsDateRange.length - 1" v-model.number="gibsDateIndex"
+          @input="onGibsDateChange"
+          class="w-full cursor-pointer" />
+        <div class="flex justify-between text-xs text-slate-600 mt-1">
+          <span>{{ gibsDateRange[0] }}</span>
+          <span>Hari ini</span>
+        </div>
+      </div>
+
+      <!-- ── LEGEND ── -->
+      <div class="p-4 mt-auto">
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">Legenda</p>
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full bg-red-500 shrink-0"></span> Confidence Tinggi (≥80%)
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full bg-yellow-400 shrink-0"></span> Confidence Sedang (30–79%)
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span class="w-3 h-3 rounded-full bg-slate-400 shrink-0"></span> Confidence Rendah (&lt;30%)
+          </div>
+          <div class="flex items-center gap-2 text-xs text-slate-400 mt-2">
+            <span class="w-3 h-3 rounded bg-sky-400/60 border border-sky-400 shrink-0"></span> Layer Asap/Citra Satelit
+          </div>
+        </div>
+        <p class="text-xs text-slate-600 mt-3">Sumber: NASA FIRMS · NASA GIBS · OSM Nominatim</p>
+      </div>
+
+    </aside>
+
+    <!-- ─── MAP AREA ─── -->
+    <div class="flex-1 relative flex flex-col min-w-0">
+
+      <!-- Map -->
+      <div id="map" class="flex-1 bg-slate-950"></div>
+
+      <!-- Loading overlay -->
+      <transition name="fade">
+        <div v-if="loading" class="absolute inset-0 bg-slate-950/70 flex flex-col items-center justify-center z-[500] pointer-events-none">
+          <svg class="w-10 h-10 text-orange-500 animate-spin mb-3" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+          </svg>
+          <p class="text-sm text-slate-300 font-medium">Memuat data hotspot dari NASA FIRMS…</p>
+        </div>
+      </transition>
+
+      <!-- Error toast -->
+      <transition name="fade">
+        <div v-if="errorMsg" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-[600] flex items-center gap-3 px-5 py-3 rounded-xl bg-red-950 border border-red-700 text-red-300 text-sm shadow-xl max-w-md">
+          <svg class="w-5 h-5 shrink-0 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11H9v4h2V7zm0 6H9v2h2v-2z" clip-rule="evenodd"/>
+          </svg>
+          <span>{{ errorMsg }}</span>
+          <button @click="errorMsg=''" class="ml-auto text-red-500 hover:text-red-300">✕</button>
+        </div>
+      </transition>
+
+      <!-- Coordinate display -->
+      <div class="absolute bottom-3 right-3 z-[400] text-xs font-mono text-slate-500 bg-slate-900/80 px-2 py-1 rounded pointer-events-none">
+        {{ coordDisplay }}
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<!-- ================================================================= -->
+<script>
+const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
+
+/* ─────────────────────────────────────────────
+   CONFIG OBJECT  (simulates .env variables)
+───────────────────────────────────────────── */
+const CONFIG = {
+  // Get a free key at: https://firms.modaps.eosdis.nasa.gov/api/map_key/
+  NASA_FIRMS_MAP_KEY: 'YOUR_NASA_FIRMS_MAP_KEY_HERE',
+  NASA_FIRMS_URL:     'https://firms.modaps.eosdis.nasa.gov/api/area/csv',
+  NASA_GIBS_WMS_URL:  'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi',
+  OSM_NOMINATIM_URL:  'https://nominatim.openstreetmap.org/reverse',
+  // Bounding box: global  (west, south, east, north)
+  DEFAULT_BBOX:       '-180,-90,180,90',
+  // Satellite source: VIIRS_SNPP_NRT or MODIS_NRT
+  FIRMS_SOURCE:       'VIIRS_SNPP_NRT',
+};
+
+/* ─────────────────────────────────────────────
+   HELPER — parse FIRMS CSV text → array of objects
+───────────────────────────────────────────── */
+function parseFirmsCSV(csvText) {
+  const lines = csvText.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim());
+  const result = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',');
+    if (vals.length < headers.length) continue;
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = vals[idx]?.trim() ?? ''; });
+    result.push(obj);
+  }
+  return result;
+}
+
+/* ─────────────────────────────────────────────
+   HELPER — build last N days array YYYY-MM-DD
+───────────────────────────────────────────── */
+function buildDateRange(days = 14) {
+  const arr = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    arr.push(d.toISOString().slice(0, 10));
+  }
+  return arr;
+}
+
+/* ─────────────────────────────────────────────
+   HELPER — confidence class
+───────────────────────────────────────────── */
+function confClass(row) {
+  // VIIRS uses 'l','n','h'; MODIS uses numeric 0-100
+  const raw = (row.confidence ?? row.conf ?? '').toString().toLowerCase();
+  if (raw === 'h' || raw === 'high')   return 'high';
+  if (raw === 'l' || raw === 'low')    return 'low';
+  const n = parseInt(raw, 10);
+  if (!isNaN(n)) {
+    if (n >= 80) return 'high';
+    if (n >= 30) return 'medium';
+    return 'low';
+  }
+  return 'medium'; // nominal → medium
+}
+
+function confColor(cls) {
+  return { high: '#ef4444', medium: '#facc15', low: '#94a3b8' }[cls] ?? '#94a3b8';
+}
+
+/* ─────────────────────────────────────────────
+   HELPER — build Leaflet circle marker icon
+───────────────────────────────────────────── */
+function makeFireIcon(color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width:10px;height:10px;
+      border-radius:50%;
+      background:${color};
+      border:1.5px solid rgba(255,255,255,0.4);
+      box-shadow:0 0 5px ${color}88;
+    "></div>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  });
+}
+
+/* ─────────────────────────────────────────────
+   VUE APP
+───────────────────────────────────────────── */
+createApp({
+  setup() {
+
+    // ── State ──
+    const loading       = ref(false);
+    const errorMsg      = ref('');
+    const lastUpdated   = ref('—');
+    const coordDisplay  = ref('Hover peta untuk koordinat');
+    const selectedDays  = ref(1);
+    const selectedConf  = ref(['high', 'medium', 'low']);
+    const smokeLayerOn  = ref(false);
+    const activeBaseMap = ref('dark');
+
+    const gibsDateRange = ref(buildDateRange(14));
+    const gibsDateIndex = ref(gibsDateRange.value.length - 1);
+    const gibsDate      = computed(() => gibsDateRange.value[gibsDateIndex.value]);
+
+    const stats = reactive({ total: 0, highConf: 0, medConf: 0, lowConf: 0 });
+
+    const timeOptions = [
+      { value: 1,  label: '24 Jam Terakhir' },
+      { value: 2,  label: '48 Jam Terakhir' },
+      { value: 7,  label: '7 Hari Terakhir' },
+      { value: 10, label: '10 Hari Terakhir' },
+    ];
+
+    const confOptions = [
+      { value: 'high',   label: 'Tinggi (≥80%)',   color: '#ef4444' },
+      { value: 'medium', label: 'Sedang (30–79%)', color: '#facc15' },
+      { value: 'low',    label: 'Rendah (<30%)',   color: '#94a3b8' },
+    ];
+
+    const baseMaps = [
+      { id: 'dark',    label: 'Gelap' },
+      { id: 'satellite', label: 'Satelit' },
+      { id: 'street',  label: 'Jalan' },
+    ];
+
+    // ── Leaflet refs (non-reactive) ──
+    let map           = null;
+    let clusterGroup  = null;
+    let baseLayer     = null;
+    let smokeWMSLayer = null;
+    let allHotspots   = [];   // raw parsed data
+
+    const BASE_TILE_URLS = {
+      dark:      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      satellite: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      street:    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    };
+    const BASE_TILE_ATTR = {
+      dark:      '&copy; <a href="https://carto.com">CartoDB</a>',
+      satellite: '&copy; Esri',
+      street:    '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+    };
+
+    // ── Init Leaflet ──
+    function initMap() {
+      map = L.map('map', {
+        center: [0, 117],
+        zoom: 4,
+        zoomControl: true,
+        attributionControl: true,
+      });
+
+      baseLayer = L.tileLayer(BASE_TILE_URLS.dark, {
+        attribution: BASE_TILE_ATTR.dark,
+        subdomains: 'abcd',
+        maxZoom: 19,
+      }).addTo(map);
+
+      clusterGroup = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        disableClusteringAtZoom: 10,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        chunkedLoading: true,
+      });
+      map.addLayer(clusterGroup);
+
+      // Coordinate tracker
+      map.on('mousemove', (e) => {
+        const { lat, lng } = e.latlng;
+        coordDisplay.value = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+      });
+    }
+
+    // ── Switch base map ──
+    function switchBaseMap(id) {
+      if (!map || activeBaseMap.value === id) return;
+      activeBaseMap.value = id;
+      map.removeLayer(baseLayer);
+      baseLayer = L.tileLayer(BASE_TILE_URLS[id], {
+        attribution: BASE_TILE_ATTR[id],
+        maxZoom: 19,
+      }).addTo(map);
+      // Ensure base is below clusters/smoke
+      baseLayer.bringToBack();
+    }
+
+    // ── Toggle smoke/GIBS WMS layer ──
+    function buildGIBSLayer(dateStr) {
+      return L.tileLayer.wms(CONFIG.NASA_GIBS_WMS_URL, {
+        layers: 'MODIS_Terra_CorrectedReflectance_TrueColor',
+        format: 'image/jpeg',
+        transparent: false,
+        version: '1.1.1',
+        time: dateStr,
+        opacity: 0.75,
+        attribution: 'NASA GIBS',
+      });
+    }
+
+    function toggleSmokeLayer() {
+      smokeLayerOn.value = !smokeLayerOn.value;
+      if (smokeLayerOn.value) {
+        smokeWMSLayer = buildGIBSLayer(gibsDate.value);
+        smokeWMSLayer.addTo(map);
+        smokeWMSLayer.bringToFront();
+      } else {
+        if (smokeWMSLayer) { map.removeLayer(smokeWMSLayer); smokeWMSLayer = null; }
+      }
+    }
+
+    function onGibsDateChange() {
+      if (smokeLayerOn.value && smokeWMSLayer) {
+        map.removeLayer(smokeWMSLayer);
+        smokeWMSLayer = buildGIBSLayer(gibsDate.value);
+        smokeWMSLayer.addTo(map);
+        smokeWMSLayer.bringToFront();
+      }
+    }
+
+    // ── Fetch NASA FIRMS data ──
+    async function fetchFirmsData() {
+      if (loading.value) return;
+      loading.value = true;
+      errorMsg.value = '';
+
+      const key    = CONFIG.NASA_FIRMS_MAP_KEY;
+      const src    = CONFIG.FIRMS_SOURCE;
+      const days   = selectedDays.value;
+      const bbox   = CONFIG.DEFAULT_BBOX;
+      const url    = `${CONFIG.NASA_FIRMS_URL}/${key}/${src}/${days}/${bbox}`;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const text = await res.text();
+
+        // Check if we got an error response (NASA FIRMS returns error as plain text)
+        if (text.startsWith('<!') || text.toLowerCase().includes('invalid')) {
+          throw new Error('API key tidak valid. Silakan daftar di firms.modaps.eosdis.nasa.gov/api/map_key/');
+        }
+
+        allHotspots = parseFirmsCSV(text);
+
+        // Fallback: inject demo data if no real data to show UI still works
+        if (allHotspots.length === 0) {
+          allHotspots = generateDemoData(500);
+        }
+
+        updateStats(allHotspots);
+        renderMarkers();
+
+        const now = new Date();
+        lastUpdated.value = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      } catch (err) {
+        console.error('[FIRMS fetch error]', err);
+        // Load demo data on error so the UI is still functional
+        allHotspots = generateDemoData(500);
+        updateStats(allHotspots);
+        renderMarkers();
+        errorMsg.value = `Gagal memuat data FIRMS: ${err.message}. Menampilkan data demo.`;
+        const now = new Date();
+        lastUpdated.value = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' (demo)';
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    // ── Generate demo hotspot data (fallback) ──
+    function generateDemoData(n = 500) {
+      const points = [];
+      // Cluster around fire-prone regions
+      const regions = [
+        // Kalimantan / Sumatra
+        { lat: 0.5, lng: 114, spread: 5 },
+        { lat: -2, lng: 113, spread: 4 },
+        { lat: 1,  lng: 104, spread: 3 },
+        // Amazon
+        { lat: -8, lng: -55, spread: 8 },
+        // Siberia
+        { lat: 60, lng: 100, spread: 10 },
+        // Africa
+        { lat: -5, lng: 22, spread: 8 },
+        // Australia
+        { lat: -28, lng: 135, spread: 7 },
+        // North America
+        { lat: 48, lng: -115, spread: 6 },
+      ];
+      const confs = ['h', 'n', 'l'];
+      const rand = (mn, mx) => mn + Math.random() * (mx - mn);
+      for (let i = 0; i < n; i++) {
+        const r = regions[Math.floor(Math.random() * regions.length)];
+        const conf = confs[Math.floor(Math.random() * confs.length)];
+        const bright = (conf === 'h' ? 380 : conf === 'n' ? 340 : 310) + rand(-20, 20);
+        const acqDate = new Date();
+        acqDate.setDate(acqDate.getDate() - Math.floor(Math.random() * selectedDays.value));
+        const hh = String(Math.floor(Math.random() * 24)).padStart(2, '0');
+        const mm = String(Math.floor(Math.random() * 60)).padStart(2, '0');
+        points.push({
+          latitude:    (r.lat + rand(-r.spread, r.spread)).toFixed(4),
+          longitude:   (r.lng + rand(-r.spread, r.spread)).toFixed(4),
+          brightness:  bright.toFixed(1),
+          confidence:  conf,
+          acq_date:    acqDate.toISOString().slice(0, 10),
+          acq_time:    `${hh}${mm}`,
+          satellite:   'N',
+          instrument:  'VIIRS',
+          _demo:       true,
+        });
+      }
+      return points;
+    }
+
+    // ── Update stat counters ──
+    function updateStats(data) {
+      stats.total   = data.length;
+      stats.highConf = data.filter(r => confClass(r) === 'high').length;
+      stats.medConf  = data.filter(r => confClass(r) === 'medium').length;
+      stats.lowConf  = data.filter(r => confClass(r) === 'low').length;
+    }
+
+    // ── Render markers with current filters ──
+    function renderMarkers() {
+      if (!map) return;
+      clusterGroup.clearLayers();
+
+      const filtered = allHotspots.filter(r => {
+        const cls = confClass(r);
+        return selectedConf.value.includes(cls);
+      });
+
+      const markers = filtered.map(row => {
+        const lat  = parseFloat(row.latitude  ?? row.lat);
+        const lng  = parseFloat(row.longitude ?? row.lon ?? row.lng);
+        if (isNaN(lat) || isNaN(lng)) return null;
+
+        const cls   = confClass(row);
+        const color = confColor(cls);
+        const icon  = makeFireIcon(color);
+
+        const marker = L.marker([lat, lng], { icon });
+
+        marker.on('click', async () => {
+          const popup = L.popup({ className: 'fw-popup', maxWidth: 280 })
+            .setLatLng([lat, lng])
+            .setContent(buildPopupLoading(row))
+            .openOn(map);
+
+          const location = await reverseGeocode(lat, lng);
+          popup.setContent(buildPopupContent(row, cls, location));
+        });
+
+        return marker;
+      }).filter(Boolean);
+
+      clusterGroup.addLayers(markers);
+
+      // Recompute stats for filtered set
+      updateStats(filtered);
+    }
+
+    // ── Popup HTML — loading state ──
+    function buildPopupLoading(row) {
+      const lat = parseFloat(row.latitude ?? row.lat).toFixed(4);
+      const lng = parseFloat(row.longitude ?? row.lon ?? row.lng).toFixed(4);
+      return `
+        <div style="padding:4px 2px">
+          <div style="font-size:13px;font-weight:700;color:#f97316;margin-bottom:8px">🔥 Titik Kebakaran</div>
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">${lat}°, ${lng}°</div>
+          <div style="font-size:11px;color:#64748b;font-style:italic">Mengambil lokasi…</div>
+        </div>`;
+    }
+
+    // ── Popup HTML — full content ──
+    function buildPopupContent(row, cls, location) {
+      const lat       = parseFloat(row.latitude  ?? row.lat).toFixed(4);
+      const lng       = parseFloat(row.longitude ?? row.lon ?? row.lng).toFixed(4);
+      const bright    = row.brightness ?? row.bright_t31 ?? '—';
+      const confRaw   = row.confidence ?? row.conf ?? '—';
+      const acqDate   = row.acq_date   ?? '—';
+      const acqTime   = row.acq_time   ?? '—';
+      const satellite = row.satellite  ?? '—';
+      const instrument= row.instrument ?? '—';
+      const isDemoTag = row._demo ? '<span style="font-size:10px;color:#f97316;background:#431407;padding:1px 5px;border-radius:4px;margin-left:4px">DEMO</span>' : '';
+
+      // Format time
+      const timeStr = acqTime.length >= 4
+        ? `${acqTime.slice(0,2)}:${acqTime.slice(2,4)} UTC`
+        : acqTime;
+
+      const clsLabel = { high: '🔴 Tinggi', medium: '🟡 Sedang', low: '⚪ Rendah' }[cls] ?? cls;
+      const color    = confColor(cls);
+
+      return `
+        <div style="padding:4px 2px;font-family:'Segoe UI',system-ui,sans-serif">
+          <div style="font-size:13px;font-weight:700;color:#f97316;margin-bottom:6px">
+            🔥 Titik Kebakaran${isDemoTag}
+          </div>
+          <div style="font-size:12px;color:#cbd5e1;font-weight:600;margin-bottom:8px;line-height:1.4">
+            📍 ${location}
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px">
+            <div style="background:#1e293b;padding:6px 8px;border-radius:7px;border:1px solid #334155">
+              <div style="color:#64748b;margin-bottom:2px">Brightness</div>
+              <div style="color:#fbbf24;font-weight:700">${bright} K</div>
+            </div>
+            <div style="background:#1e293b;padding:6px 8px;border-radius:7px;border:1px solid #334155">
+              <div style="color:#64748b;margin-bottom:2px">Confidence</div>
+              <div style="color:${color};font-weight:700">${clsLabel} (${confRaw})</div>
+            </div>
+            <div style="background:#1e293b;padding:6px 8px;border-radius:7px;border:1px solid #334155">
+              <div style="color:#64748b;margin-bottom:2px">Tanggal</div>
+              <div style="color:#e2e8f0;font-weight:600">${acqDate}</div>
+            </div>
+            <div style="background:#1e293b;padding:6px 8px;border-radius:7px;border:1px solid #334155">
+              <div style="color:#64748b;margin-bottom:2px">Waktu Rekaman</div>
+              <div style="color:#e2e8f0;font-weight:600">${timeStr}</div>
+            </div>
+          </div>
+          <div style="margin-top:7px;font-size:10px;color:#475569;text-align:right">
+            Satelit: ${satellite} · ${instrument}
+          </div>
+        </div>`;
+    }
+
+    // ── Reverse Geocoding via OSM Nominatim ──
+    const _geocodeCache = {};
+    async function reverseGeocode(lat, lng) {
+      // Round to 2 decimal places for cache key (≈1 km accuracy)
+      const key = `${parseFloat(lat).toFixed(2)},${parseFloat(lng).toFixed(2)}`;
+      if (_geocodeCache[key]) return _geocodeCache[key];
+
+      try {
+        const url = `${CONFIG.OSM_NOMINATIM_URL}?lat=${lat}&lon=${lng}&format=json&zoom=10&accept-language=id`;
+        const res = await fetch(url, { headers: { 'Accept-Language': 'id' } });
+        if (!res.ok) throw new Error('Nominatim error');
+        const data = await res.json();
+        const addr = data.address ?? {};
+
+        const parts = [
+          addr.city ?? addr.town ?? addr.village ?? addr.county ?? addr.state_district,
+          addr.state ?? addr.province,
+          addr.country,
+        ].filter(Boolean);
+
+        const result = parts.length > 0 ? parts.join(', ') : `${parseFloat(lat).toFixed(3)}°, ${parseFloat(lng).toFixed(3)}°`;
+        _geocodeCache[key] = result;
+        return result;
+      } catch {
+        return `${parseFloat(lat).toFixed(3)}°, ${parseFloat(lng).toFixed(3)}°`;
+      }
+    }
+
+    // ── Lifecycle ──
+    onMounted(async () => {
+      await nextTick();
+      initMap();
+      fetchFirmsData();
+    });
+
+    return {
+      loading, errorMsg, lastUpdated, coordDisplay,
+      selectedDays, selectedConf, smokeLayerOn, activeBaseMap,
+      gibsDateRange, gibsDateIndex, gibsDate,
+      stats, timeOptions, confOptions, baseMaps,
+      fetchFirmsData, renderMarkers,
+      toggleSmokeLayer, onGibsDateChange, switchBaseMap,
+    };
+  }
+}).mount('#app');
+</script>
+
+</body>
+</html>
